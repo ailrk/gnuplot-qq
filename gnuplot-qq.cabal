@@ -1,0 +1,22 @@
+cabal-version:      3.0
+name:               gnuplot-qq
+version:            0.1.0.0
+description:        Simple gnuplot quasi quoter
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Ailrk
+maintainer:         jimmy123good@gmail.com
+category:           Graphics
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+    exposed-modules:
+      Graphics.Gnuplot.QQ
+    build-depends:    base ^>=4.18.2.1
+    hs-source-dirs:   src
+    default-language: Haskell2010
