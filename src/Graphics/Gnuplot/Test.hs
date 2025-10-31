@@ -1,10 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Graphics.Gnuplot.Test where
 
-
 import Graphics.Gnuplot.QQ
+
 
 test1 :: IO ()
 test1 =
@@ -100,3 +101,53 @@ test3 = do
             {d:points3D} using 1:2:3 with lines lc rgb "red" notitle
       pause -1
     |]
+
+
+-- Runge kutta 4
+rk4
+  :: (Floating a)
+  => (a -> a -> a)  -- ^ f(t, y) (derivative function)
+  -> a              -- ^ dt      (time step)
+  -> a              -- ^ t       (current time)
+  -> a              -- ^ y       (current state)
+  -> (a, a)         -- ^ (t, y)  (next time, next state)
+rk4 f dt t y = (t', y')
+  where
+    k1 = f t y
+    k2 = f (t + dt/2) (y + dt/2 * k1)
+    k3 = f (t + dt/2) (y + dt/2 * k2)
+    k4 = f (t + dt) (y + dt * k3)
+    t' = t + dt
+    y' = y + dt/6 * sum [k1, 2 * k2, 2 * k3, k4]
+
+
+test4 :: IO ()
+test4 = do
+  runGnuplot [gnuplot|
+      set term qt
+      set title "Runge kutta 4"
+      set key bottom left
+      plot [-0.1:4.1] \
+           {d:ptsWithErr 4} using 1:2:3 with yerrorbars lc rgb "red" notitle, \
+           {d:ptsWithErr 4} using 1:2 with line lc rgb "red" title 'dt=4', \
+           {d:ptsWithErr 2} using 1:2:3 with yerrorbars lc rgb "blue" notitle, \
+           {d:ptsWithErr 2} using 1:2 with line lc rgb "blue" title 'dt=2', \
+           {d:ptsWithErr 1} using 1:2:3 with yerrorbars lc rgb "orange" notitle, \
+           {d:ptsWithErr 1} using 1:2 with line lc rgb "orange" title 'dt=1', \
+           {d:ptsWithErr 0.5} using 1:2:3 with yerrorbars lc rgb "green" notitle, \
+           {d:ptsWithErr 0.5} using 1:2 with line lc rgb "green" title 'dt=0.5', \
+           x**2 + 2 * x + 1 - exp(x)/2 t 'y(t)'
+      pause -1
+    |] { mode = Onscreen }
+  where
+    e              = exp @Double 1
+    f t y          = y - t**2 + 1
+    real_y t       = t**2 + 2 * t + 1 - e**t/2
+    y0             = 0.5 :: Double
+    t0             = 0
+    tn             = 4
+    pdot dt (t, y) = rk4 f dt t y
+    pts dt         = fmap (\(x,y) -> [x,y])
+                   $ take (floor ((tn - t0) / dt) + 1)
+                   $ iterate (pdot dt) (t0, y0)
+    ptsWithErr dt  = [[x, y, abs (real_y x - y)] | [x, y] <- pts dt]
