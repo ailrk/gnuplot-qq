@@ -6,21 +6,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-
 module Graphics.Gnuplot.QQ where
 
 import Data.Foldable (Foldable(..))
+import Data.List (isPrefixOf)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
+import Language.Haskell.Meta.Parse (parseExp)
+import Language.Haskell.TH (Exp, Q)
+import Language.Haskell.TH.Quote (QuasiQuoter(..))
 import System.IO (hClose)
 import System.IO.Temp (withSystemTempFile)
 import System.Process (createProcess,proc,waitForProcess,CreateProcess(std_err, std_out), StdStream(Inherit))
-import Language.Haskell.TH (Exp, Q)
-import Language.Haskell.TH.Quote (QuasiQuoter(..))
-import Language.Haskell.Meta.Parse (parseExp)
 import Text.Regex.TDFA ((=~))
-import Data.List (isPrefixOf)
 
 
 type DataSetName = String
