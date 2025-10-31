@@ -82,10 +82,11 @@ test2 = do
 
 test3 :: IO ()
 test3 = do
-  let xs = [0,0.5..5]
-      ys = [0,0.5..5]
+  let xs = [0,0.5..30]
+      ys = [0,0.5..30]
       -- z = sin(x)*cos(y)
-      points3D = [ [x,y,sin x * cos y] | x <- xs, y <- ys ]
+      points3D = concatMap (\x -> [[x,y,sin x * cos y] | y <- ys] ++ [[0/0,0/0,0/0]]) xs
+
   runGnuplot
     [gnuplot|
       set term qt
@@ -98,7 +99,8 @@ test3 = do
 
       # Use splot for 3D surface
       splot {d:points3D} using 1:2:3 with points lc rgb "blue" title "Points", \
-            {d:points3D} using 1:2:3 with lines lc rgb "red" notitle
+            {d:points3D} using 1:2:3 with lines lc rgb "red" notitle, \
+            {d:points3D} using 2:1:3 with lines lc rgb "red" notitle
       pause -1
     |]
 
