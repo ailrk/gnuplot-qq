@@ -15,14 +15,15 @@ import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import System.IO (hClose)
 import System.IO.Temp (withSystemTempFile)
-import System.Process
-import Language.Haskell.TH
-import Language.Haskell.TH.Quote
-import Language.Haskell.Meta.Parse
+import System.Process (createProcess,proc,waitForProcess,CreateProcess(std_err, std_out), StdStream(Inherit))
+import Language.Haskell.TH (Exp, Q)
+import Language.Haskell.TH.Quote (QuasiQuoter(..))
+import Language.Haskell.Meta.Parse (parseExp)
 import Text.Regex.TDFA ((=~))
+import Data.List (isPrefixOf)
 
 
-type DataSetName = Text
+type DataSetName = String
 
 
 data DataSet = DataSet
@@ -31,20 +32,15 @@ data DataSet = DataSet
   }
 
 
-data Item
-  = DataItem DataSet
-  | InterpItem (String, String)
-
-
-data Gnuplot = Gnuplot { script :: Text, items :: [Item] }
+data Gnuplot = Gnuplot { script :: Text, items :: [DataSet] }
 
 
 gnuplot :: QuasiQuoter
 gnuplot = QuasiQuoter
   { quoteExp  = quoteGnuplotExp
-  , quotePat  = error "can't use gnuplot on patterns"
-  , quoteType = error "can't use gnuplot on patterns"
-  , quoteDec  = error "can't use gnuplot on patterns"
+  , quotePat  = error "can't use gnuplot on pat"
+  , quoteType = error "can't use gnuplot on type"
+  , quoteDec  = error "can't use gnuplot on dec"
   }
 
 
@@ -63,19 +59,26 @@ quoteGnuplotExp s = foldr appendChunk [| Gnuplot "" [] |] parts
 interpolate :: String -> [Either String String]
 interpolate "" = []
 interpolate s =
-  case s =~ Text.pack "#" :: (String, String, String, [String]) of
-  -- case s =~ Text.pack "(.*?)#\\{([^}]+)\\}" :: (String, String, String, [String]) of
+  case s =~ Text.pack "\\{([^}]+)\\}" :: (String, String, String, [String]) of
     (before, "", "", []) -> [Left before]
     (before, _, after, [expr]) -> Left before : Right expr : interpolate after
     _ -> [Left s]
 
 
 appendChunk :: Either String String -> Q Exp -> Q Exp
-appendChunk (Left txt) acc = [| let (Gnuplot old items) = $acc in Gnuplot (Text.pack txt <> old) items |]
-appendChunk (Right expr) acc = do
-  case parseExp expr of
-    Right e -> [| let (Gnuplot old ds) = $acc in Gnuplot (Text.pack (show $(pure e)) <> old) ds |]
-    Left err -> fail ("Failed to parse expression: " ++ err)
+appendChunk (Left txt) acc = do
+  [| let (Gnuplot old items) = $acc in Gnuplot (Text.pack txt <> old) items |]
+appendChunk (Right expr) acc
+  | "i:" `isPrefixOf` expr = f (\e -> [| let (Gnuplot old ds) = $acc in Gnuplot (Text.pack (show $(pure e)) <> old) ds |])
+  | "r:" `isPrefixOf` expr = f (\e -> [| let (Gnuplot old ds) = $acc in Gnuplot (Text.pack (show $(pure e)) <> old) ds |])
+  | "s:" `isPrefixOf` expr = f (\e -> [| let (Gnuplot old ds) = $acc in Gnuplot (Text.pack $(pure e) <> old) ds |])
+  | "d:" `isPrefixOf` expr = do f (\e -> [| let (Gnuplot old ds) = $acc in Gnuplot ("{" <> expr <> "}" <> old) (DataSet (drop 2 expr) $(pure e):ds) |])
+  | otherwise = fail "Unknown data type. One of i,r,s,d"
+  where
+    f q =
+      case parseExp (drop 2 expr) of
+        Right e -> q e
+        Left err -> fail ("Failed to parse expression: " ++ err)
 
 
 dataSetToText :: [[Double]] -> Text
@@ -89,14 +92,14 @@ withTempFiles dataSets action = go dataSets []
   where
     go [] acc = action acc
     go ((DataSet name rows):rest) acc =
-      withSystemTempFile (Text.unpack name ++ ".dat") $ \fp h -> do
+      withSystemTempFile (name ++ ".dat") $ \fp h -> do
         Text.hPutStr h (dataSetToText rows)
         hClose h
         go rest ((name, fp):acc)
 
 
-runGnuplot :: Gnuplot -> [DataSet] -> IO ()
-runGnuplot (Gnuplot script _) dataSets = do
+runGnuplot :: Gnuplot -> IO ()
+runGnuplot (Gnuplot script dataSets) = do
   withTempFiles dataSets \mapping -> do
     withSystemTempFile "gnuplot.gpl" \gpl gplH -> do
       let finalScript = foldl' replace script mapping
@@ -109,4 +112,4 @@ runGnuplot (Gnuplot script _) dataSets = do
       _ <- waitForProcess ph
       pure ()
   where
-    replace text (name, path) = Text.replace ("{{"<> name <> "}}") ("'" <> Text.pack path <> "'") text
+    replace text (name, path) = Text.replace ("{d:"<> Text.pack name <> "}") ("'" <> Text.pack path <> "'") text
